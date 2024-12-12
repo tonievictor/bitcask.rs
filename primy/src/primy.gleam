@@ -2,11 +2,12 @@ import gleam/erlang/process
 import gleam/int
 import gleam/io
 import gleam/option.{type Option, None, Some}
-import gleam/yielder.{from_list, map, to_list}
+import gleam/yielder.{filter, from_list, map, to_list}
 
 pub fn main() {
   from_list([1, 4, 5])
   |> map(fn(x) { is_prime(x) })
+  |> filter(fn(x) { x > 0 })
   |> to_list
   |> io.debug
 }
