@@ -5,7 +5,12 @@ import gleam/option.{type Option, None, Some}
 import gleam/yielder.{filter, from_list, map, to_list}
 
 pub fn main() {
-  from_list([1, 4, 5])
+  from_list([
+    1, 4, 6, 7, 75_654_596_987_987_976_987, 68_756_756_757_657_656_987,
+    98_789_798_798_789_796_546, 54_654_564_217_541_236_547,
+    65_421_378_512_736_521_765, 73_658_765_123_765_123_786,
+    512_378_657_852_319_179,
+  ])
   |> map(fn(x) { is_prime(x) })
   |> filter(fn(x) { x > 0 })
   |> to_list
@@ -25,12 +30,16 @@ fn is_prime(n) -> Int {
         },
         False,
       )
-      let assert Ok(v) = process.receive(subj, 100)
-      case v {
-        Some(v) -> {
-          v
+      case process.receive(subj, 1000) {
+        Ok(v) -> {
+          case v {
+            Some(v) -> {
+              v
+            }
+            None -> 0
+          }
         }
-        None -> 0
+        Error(_) -> 0
       }
     }
   }

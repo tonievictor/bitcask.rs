@@ -1,0 +1,13 @@
+[package]
+name = "kvuno"
+version = "0.1.0"
+authors = ["Tonie Victor <toniedevng@gmail.com>"]
+description = "A key-value store"
+edition = "2021"
+
+[dev-dependencies]
+assert_cmd = "2.0.16"
+
+[dependencies]
+clap = { version = "4.5.23", features = ["derive"] }
+predicates = "3.1.3"
