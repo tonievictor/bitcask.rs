@@ -1,17 +1,11 @@
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use serde_json;
 use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::time::SystemTime;
-use ulid::Ulid;
-
-pub struct Bitcask {
-    file: File,
-    keydir: HashMap<String, KeydirVal>,
-}
 
 #[derive(Serialize, Deserialize)]
 pub struct Pair {
@@ -22,26 +16,27 @@ pub struct Pair {
     timestamp: SystemTime,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct KeydirVal {
-    //file_id: String,
     value_size: usize,
     value_pos: u64,
     timestamp: SystemTime,
 }
 
+pub struct Bitcask {
+    file: File,
+    keydir: HashMap<String, KeydirVal>,
+}
+
 impl Bitcask {
     pub fn open(directory: impl Into<PathBuf>) -> Result<Bitcask> {
-        let dir = directory.into();
-        let filename = Ulid::new().to_string();
-        let path = dir.join(Path::new(&filename));
+        let path = directory.into();
         let file = OpenOptions::new()
             .create(true)
-            .read(true)
             .append(true)
+            .read(true)
             .open(&path)?;
         Ok(Bitcask {
-            //path,
             file,
             keydir: HashMap::new(),
         })
@@ -64,11 +59,8 @@ impl Bitcask {
             value_pos: pos,
             timestamp: SystemTime::now(),
         };
-
-        match self.keydir.insert(key.to_owned(), kdirval) {
-            Some(_) => Ok(()),
-            None => Err(anyhow!("Unable to write to keydir")),
-        }
+        let _oldval = self.keydir.insert(key.to_owned(), kdirval);
+        Ok(())
     }
 
     pub fn get(&mut self, key: String) -> Result<Option<String>> {
@@ -83,9 +75,5 @@ impl Bitcask {
             }
             None => Ok(None),
         }
-    }
-
-    pub fn remove(&mut self, _key: String) -> Result<()> {
-        Ok(())
     }
 }
