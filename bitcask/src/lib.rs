@@ -1,15 +1,33 @@
-use anyhow::Result;
+use anyhow::{anyhow, Result};
+use serde::{Deserialize, Serialize};
+use serde_json;
 use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
-use std::io::BufWriter;
+use std::io::{Seek, Write};
 use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 use ulid::Ulid;
 
 pub struct Bitcask {
-    path: PathBuf,
-    writer: BufWriter<File>,
-    // the value will be a json serializable string
-    reader: HashMap<String, String>,
+    file: File,
+    keydir: HashMap<String, KeydirVal>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct Pair {
+    pub key: String,
+    pub keysize: usize,
+    pub value: String,
+    pub value_size: usize,
+    timestamp: SystemTime,
+}
+
+#[derive(Clone)]
+pub struct KeydirVal {
+    //file_id: String,
+    value_size: usize,
+    value_pos: u64,
+    timestamp: SystemTime,
 }
 
 impl Bitcask {
@@ -17,16 +35,47 @@ impl Bitcask {
         let dir = directory.into();
         let filename = Ulid::new().to_string();
         let path = dir.join(Path::new(&filename));
-        let file = OpenOptions::new().create(true).append(true).open(&path)?;
-        let bw = BufWriter::new(file);
+        let file = OpenOptions::new()
+            .create(true)
+            .read(true)
+            .append(true)
+            .open(&path)?;
         Ok(Bitcask {
-            path,
-            writer: bw,
-            reader: HashMap::new(),
+            //path,
+            file,
+            keydir: HashMap::new(),
         })
     }
 
-    pub fn set(&mut self, key: String, value: String) -> Result<()> {}
-    pub fn get(&self, key: String) -> Option<String> {}
-    pub fn remove(&mut self, key: String) -> Result<()> {}
+    pub fn set(&mut self, key: &str, value: &str) -> Result<()> {
+        let pair = Pair {
+            key: String::from(key),
+            keysize: key.len(),
+            value: String::from(value),
+            value_size: value.len(),
+            timestamp: SystemTime::now(),
+        };
+
+        let pos = self.file.stream_position()?;
+        let p = serde_json::to_string(&pair)?;
+        let _ = self.file.write(p.as_bytes())?;
+        let kdirval = KeydirVal {
+            value_size: p.len(),
+            value_pos: pos,
+            timestamp: SystemTime::now(),
+        };
+
+        match self.keydir.insert(key.to_owned(), kdirval) {
+            Some(_) => Ok(()),
+            None => Err(anyhow!("Unable to write to keydir")),
+        }
+    }
+
+    pub fn get(&mut self, _key: String) -> Result<Option<String>> {
+        Ok(None)
+    }
+
+    pub fn remove(&mut self, _key: String) -> Result<()> {
+        Ok(())
+    }
 }
