@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use serde_json;
 use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
-use std::io::{Seek, Write};
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 use ulid::Ulid;
@@ -71,8 +71,18 @@ impl Bitcask {
         }
     }
 
-    pub fn get(&mut self, _key: String) -> Result<Option<String>> {
-        Ok(None)
+    pub fn get(&mut self, key: String) -> Result<Option<String>> {
+        match self.keydir.get(&key).cloned() {
+            Some(v) => {
+                let mut buf = vec![0u8; v.value_size];
+                self.file.seek(SeekFrom::Start(v.value_pos))?;
+                self.file.read_exact(&mut buf)?;
+                let jstr = String::from_utf8(buf)?;
+                let pair: Pair = serde_json::from_str(jstr.as_str())?;
+                Ok(Some(pair.value))
+            }
+            None => Ok(None),
+        }
     }
 
     pub fn remove(&mut self, _key: String) -> Result<()> {
