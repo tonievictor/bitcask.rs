@@ -1,4 +1,5 @@
 use bitcask::Bitcask;
+use std::env;
 use std::io::stdin;
 use std::path::Path;
 use std::process::exit;
@@ -19,7 +20,13 @@ struct Command {
 }
 
 fn main() {
-    let mut store = init_store("trial");
+    let args: Vec<_> = env::args().collect();
+    if args.len() != 2 {
+        eprintln!("Usage {} <logdirectory>", args[0]);
+        exit(1);
+    }
+    let mut store = init_store(&args[1]);
+
     loop {
         let mut input = String::new();
         stdin()
