@@ -54,9 +54,8 @@ fn main() {
     }
 }
 
-fn parse_input(mut input: String) -> Result<Command, ()> {
-    input.pop();
-    let newinput: Vec<_> = input.split(" ").collect();
+fn parse_input(input: String) -> Result<Command, ()> {
+    let newinput: Vec<_> = input.trim().split(" ").collect();
 
     let mut value = String::from("");
 
