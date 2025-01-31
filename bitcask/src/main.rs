@@ -1,6 +1,6 @@
 use bitcask::Bitcask;
 use std::env;
-use std::io::stdin;
+use std::io::{stdin, stdout, Write};
 use std::path::Path;
 use std::process::exit;
 use ulid::Ulid;
@@ -28,6 +28,9 @@ fn main() {
     let mut store = init_store(&args[1]);
 
     loop {
+        print!("> ");
+        stdout().flush().expect("Failed to flush stdout");
+
         let mut input = String::new();
         stdin()
             .read_line(&mut input)
