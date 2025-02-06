@@ -49,7 +49,6 @@ fn main() {
                     },
                     Err(err) => eprintln!("An error occured: {}", err),
                 },
-
                 Action::Remove => unimplemented!(""),
             },
             Err(_) => continue,
@@ -103,10 +102,10 @@ fn parse_input(input: String) -> Result<Command, ()> {
 
 fn init_store(dir_name: &str) -> Bitcask {
     let dir = Path::new(dir_name);
-    let filename = Ulid::new().to_string();
+    let filename = Ulid::new().to_string() + ".btk";
     let path = dir.join(Path::new(&filename));
 
-    match Bitcask::open(path) {
+    match Bitcask::open(dir, path) {
         Ok(store) => store,
         Err(err) => {
             eprintln!("An error occured while setting up the log, {:?}", err);
