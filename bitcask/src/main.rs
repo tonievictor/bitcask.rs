@@ -3,7 +3,6 @@ use std::env;
 use std::io::{stdin, stdout, Write};
 use std::path::Path;
 use std::process::exit;
-use ulid::Ulid;
 
 #[derive(Debug)]
 enum Action {
@@ -102,7 +101,7 @@ fn parse_input(input: String) -> Result<Command, ()> {
 
 fn init_store(dir_name: &str) -> Bitcask {
     let dir = Path::new(dir_name);
-    let filename = Ulid::new().to_string() + ".btk";
+    let filename = String::from("activelog.btk");
     let path = dir.join(Path::new(&filename));
 
     match Bitcask::open(dir, path) {

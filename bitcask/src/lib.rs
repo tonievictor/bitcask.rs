@@ -2,10 +2,11 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use serde_json;
 use std::collections::HashMap;
-use std::fs::{read_dir, File, OpenOptions};
+use std::fs::{copy, read_dir, read_to_string, remove_file, File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
+use ulid::Ulid;
 
 #[derive(Serialize, Deserialize)]
 pub struct Pair {
@@ -27,6 +28,7 @@ pub struct Bitcask {
     directory: Box<Path>,
     filepath: PathBuf,
     file: File,
+    cursor: usize,
     keydir: HashMap<String, KeydirVal>,
 }
 
@@ -38,9 +40,13 @@ impl Bitcask {
             .append(true)
             .read(true)
             .open(&path)?;
+
+        let contents = read_to_string(path.clone())?;
+
         Ok(Bitcask {
             directory: directory.into(),
             file,
+            cursor: contents.as_str().as_bytes().len(),
             filepath: path,
             keydir: HashMap::new(),
         })
@@ -62,20 +68,46 @@ impl Bitcask {
         Ok(())
     }
 
+    fn dropcurrentfile(&mut self) -> Result<()> {
+        let newfilename = Ulid::new().to_string() + ".btk";
+        let path = self.directory.join(Path::new(&newfilename));
+
+        copy(self.filepath.clone(), path)?;
+        remove_file(self.filepath.clone())?;
+
+        self.file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .read(true)
+            .open(&self.filepath.clone())?;
+
+        Ok(())
+    }
+
     pub fn set(&mut self, key: &str, value: &str) -> Result<()> {
-        let pair = Pair {
+        let pair = serde_json::to_string(&Pair {
             key: String::from(key),
             keysize: key.len(),
             value: String::from(value),
             value_size: value.len(),
             timestamp: SystemTime::now(),
+        })?;
+
+        // if the file is bigger than or close to 5mb,
+        let cursor = self.file.stream_position()?;
+        let mut pos = if cursor >= self.cursor as u64 {
+            cursor
+        } else {
+            self.cursor as u64
         };
 
-        let pos = self.file.stream_position()?;
-        let p = serde_json::to_string(&pair)?;
-        let _ = self.file.write(p.as_bytes())?;
+        if pos >= 5120 - pair.len() as u64 {
+            self.dropcurrentfile()?;
+            pos = 0;
+        };
+        let _ = self.file.write(pair.as_bytes())?;
         let kdirval = KeydirVal {
-            value_size: p.len(),
+            value_size: pair.len(),
             value_pos: pos,
             timestamp: SystemTime::now(),
         };
