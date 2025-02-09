@@ -54,7 +54,7 @@ impl Bitcask {
 
     //Merge several data files within a Bitcask datastore into a more
     //compact form. Also, produce hintfiles for faster startup.
-    pub fn merge(&self) -> Result<()> {
+    fn merge(&self) -> Result<()> {
         let paths = read_dir(self.directory.clone())?;
 
         let mut non_active_files: Vec<PathBuf> = Vec::new();
