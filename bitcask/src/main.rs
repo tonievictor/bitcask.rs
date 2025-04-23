@@ -6,7 +6,7 @@ use std::process::exit;
 
 #[derive(Debug)]
 enum Action {
-    Set,
+    Put,
     Get,
     Remove,
 }
@@ -37,7 +37,7 @@ fn main() {
 
         match parse_input(input) {
             Ok(command) => match command.action {
-                Action::Set => match store.set(command.key.as_str(), command.value.as_str()) {
+                Action::Put => match store.put(command.key.as_str(), command.value.as_str()) {
                     Ok(_) => println!("Successfully set key value pair"),
                     Err(err) => eprintln!("An error occured: {}", err),
                 },
@@ -61,13 +61,13 @@ fn parse_input(input: String) -> Result<Command, ()> {
     let mut value = String::from("");
 
     let action = match newinput[0] {
-        "set" => {
+        "put" => {
             if newinput.len() != 3 {
-                eprintln!("Set command: set <key> <value>");
+                eprintln!("Set command: put <key> <value>");
                 return Err(());
             }
             value = String::from(newinput[2]);
-            Action::Set
+            Action::Put
         }
         "get" => {
             if newinput.len() != 2 {

@@ -52,22 +52,6 @@ impl Bitcask {
         })
     }
 
-    //Merge several data files within a Bitcask datastore into a more
-    //compact form. Also, produce hintfiles for faster startup.
-    fn merge(&self) -> Result<()> {
-        let paths = read_dir(self.directory.clone())?;
-
-        let mut non_active_files: Vec<PathBuf> = Vec::new();
-
-        for path in paths {
-            let p = path?;
-            if p.path() != self.filepath {
-                non_active_files.push(p.path());
-            }
-        }
-        Ok(())
-    }
-
     fn dropcurrentfile(&mut self) -> Result<()> {
         let newfilename = Ulid::new().to_string() + ".btk";
         let path = self.directory.join(Path::new(&newfilename));
@@ -84,7 +68,7 @@ impl Bitcask {
         Ok(())
     }
 
-    pub fn set(&mut self, key: &str, value: &str) -> Result<()> {
+    pub fn put(&mut self, key: &str, value: &str) -> Result<()> {
         let pair = serde_json::to_string(&Pair {
             key: String::from(key),
             keysize: key.len(),
@@ -111,7 +95,7 @@ impl Bitcask {
             value_pos: pos,
             timestamp: SystemTime::now(),
         };
-        let _oldval = self.keydir.insert(key.to_owned(), kdirval);
+        self.keydir.insert(key.to_owned(), kdirval);
         Ok(())
     }
 
@@ -127,5 +111,21 @@ impl Bitcask {
             }
             None => Ok(None),
         }
+    }
+
+    //Merge several data files within a Bitcask datastore into a more
+    //compact form. Also, produce hintfiles for faster startup.
+    fn merge(&self) -> Result<()> {
+        let paths = read_dir(self.directory.clone())?;
+
+        let mut non_active_files: Vec<PathBuf> = Vec::new();
+
+        for path in paths {
+            let p = path?;
+            if p.path() != self.filepath {
+                non_active_files.push(p.path());
+            }
+        }
+        Ok(())
     }
 }
