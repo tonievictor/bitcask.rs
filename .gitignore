@@ -1,7 +1,3 @@
-*/*.beam
-*/*.ez
-**/build
-*/erl_crash.dump
-
-**/target
-**/.gitignore
+target
+.gitignore
+log
