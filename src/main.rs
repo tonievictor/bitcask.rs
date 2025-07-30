@@ -9,6 +9,7 @@ enum Action {
     Put,
     Get,
     Remove,
+    Exit,
 }
 
 #[derive(Debug)]
@@ -39,14 +40,24 @@ fn main() {
             Ok(command) => match command.action {
                 Action::Put => match store.put(command.key.as_str(), command.value.as_str()) {
                     Ok(_) => println!("Successfully set key value pair"),
-                    Err(err) => eprintln!("An error occured: {}", err),
+                    Err(err) => eprintln!("An error occured: {err}"),
                 },
                 Action::Get => match store.get(command.key) {
                     Ok(obj) => match obj {
-                        Some(v) => println!("{}", v),
+                        Some(v) => println!("{v}"),
                         None => println!("Key does not exist in the database"),
                     },
-                    Err(err) => eprintln!("An error occured: {}", err),
+                    Err(err) => eprintln!("An error occured: {err}"),
+                },
+                Action::Exit => match store.sync() {
+                    Ok(_) => {
+                        println!("Bye for now...");
+                        exit(0);
+                    }
+                    Err(err) => {
+                        eprintln!("could not exit: {err}");
+                        eprintln!("An error occured while syncing datastore, try again");
+                    }
                 },
                 Action::Remove => unimplemented!(""),
             },
@@ -63,7 +74,7 @@ fn parse_input(input: String) -> Result<Command, ()> {
     let action = match newinput[0] {
         "put" => {
             if newinput.len() != 3 {
-                eprintln!("Set command: put <key> <value>");
+                eprintln!("Put command: put <key> <value>");
                 return Err(());
             }
             value = String::from(newinput[2]);
@@ -84,7 +95,15 @@ fn parse_input(input: String) -> Result<Command, ()> {
             Action::Remove
         }
         "exit" => {
-            exit(0);
+            if newinput.len() != 1 {
+                eprintln!("exit requires no arguments!!!");
+                return Err(());
+            }
+            return Ok(Command {
+                action: Action::Exit,
+                key: "".to_string(),
+                value: "".to_string(),
+            });
         }
         _ => {
             println!("invalid command");
@@ -100,14 +119,10 @@ fn parse_input(input: String) -> Result<Command, ()> {
 }
 
 fn init_store(dir_name: &str) -> Bitcask {
-    let dir = Path::new(dir_name);
-    let filename = String::from("activelog.btk");
-    let path = dir.join(Path::new(&filename));
-
-    match Bitcask::open(dir, path) {
+    match Bitcask::open(Path::new(dir_name)) {
         Ok(store) => store,
         Err(err) => {
-            eprintln!("An error occured while setting up the log, {:?}", err);
+            eprintln!("An error occured while setting up the log, {err:?}");
             exit(1)
         }
     }
