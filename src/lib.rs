@@ -9,18 +9,20 @@ use std::time::SystemTime;
 use ulid::Ulid;
 
 #[derive(Serialize, Deserialize)]
-pub struct Pair {
-    pub key: String,
+pub struct Pair<'a> {
+    pub key: &'a str,
     pub keysize: usize,
-    pub value: String,
+    pub value: &'a str,
     pub value_size: usize,
     timestamp: SystemTime,
 }
 
+#[allow(dead_code)]
 #[derive(Clone, Debug)]
 pub struct KeydirVal {
-    value_size: usize,
-    value_pos: u64,
+    entry_size: usize,
+    entry_pos: u64,
+    file_id: PathBuf,
     timestamp: SystemTime,
 }
 
@@ -28,7 +30,7 @@ pub struct Bitcask {
     directory: Box<Path>,
     filepath: PathBuf,
     file: File,
-    cursor: usize,
+    cursor: usize, //stores the content of the file when opened. helps guide insertion.
     keydir: HashMap<String, KeydirVal>,
 }
 
@@ -46,7 +48,7 @@ impl Bitcask {
         Ok(Bitcask {
             directory: directory.into(),
             file,
-            cursor: contents.as_str().as_bytes().len(),
+            cursor: contents.len(),
             filepath: path,
             keydir: HashMap::new(),
         })
@@ -63,36 +65,33 @@ impl Bitcask {
             .create(true)
             .append(true)
             .read(true)
-            .open(&self.filepath.clone())?;
+            .open(self.filepath.clone())?;
 
         Ok(())
     }
 
-    pub fn put(&mut self, key: &str, value: &str) -> Result<()> {
+    pub fn put<'a>(&mut self, key: &'a str, value: &'a str) -> Result<()> {
         let pair = serde_json::to_string(&Pair {
-            key: String::from(key),
+            key,
             keysize: key.len(),
-            value: String::from(value),
+            value,
             value_size: value.len(),
             timestamp: SystemTime::now(),
         })?;
 
-        // if the file is bigger than or close to 5mb,
         let cursor = self.file.stream_position()?;
-        let mut pos = if cursor >= self.cursor as u64 {
-            cursor
-        } else {
-            self.cursor as u64
-        };
+        let mut pos = std::cmp::max(cursor, self.cursor as u64);
 
+        // check if file is larger than 5mb
         if pos >= 5120 - pair.len() as u64 {
             self.dropcurrentfile()?;
             pos = 0;
         };
         let _ = self.file.write(pair.as_bytes())?;
         let kdirval = KeydirVal {
-            value_size: pair.len(),
-            value_pos: pos,
+            entry_size: pair.len(),
+            entry_pos: pos,
+            file_id: self.filepath.clone(),
             timestamp: SystemTime::now(),
         };
         self.keydir.insert(key.to_owned(), kdirval);
@@ -102,12 +101,13 @@ impl Bitcask {
     pub fn get(&mut self, key: String) -> Result<Option<String>> {
         match self.keydir.get(&key).cloned() {
             Some(v) => {
-                let mut buf = vec![0u8; v.value_size];
-                self.file.seek(SeekFrom::Start(v.value_pos))?;
-                self.file.read_exact(&mut buf)?;
+                let mut buf = vec![0u8; v.entry_size];
+                let mut f = OpenOptions::new().read(true).open(v.file_id)?;
+                f.seek(SeekFrom::Start(v.entry_pos))?;
+                f.read_exact(&mut buf)?;
                 let jstr = String::from_utf8(buf)?;
                 let pair: Pair = serde_json::from_str(jstr.as_str())?;
-                Ok(Some(pair.value))
+                Ok(Some(pair.value.to_string()))
             }
             None => Ok(None),
         }
@@ -115,11 +115,10 @@ impl Bitcask {
 
     //Merge several data files within a Bitcask datastore into a more
     //compact form. Also, produce hintfiles for faster startup.
+    #[allow(dead_code)]
     fn merge(&self) -> Result<()> {
         let paths = read_dir(self.directory.clone())?;
-
         let mut non_active_files: Vec<PathBuf> = Vec::new();
-
         for path in paths {
             let p = path?;
             if p.path() != self.filepath {
