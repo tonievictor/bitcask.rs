@@ -117,11 +117,16 @@ impl Bitcask {
         Ok(())
     }
 
-    pub fn sync(&mut self) -> Result<()> {
+    fn sync(&mut self) -> Result<()> {
         self.keydir_file.set_len(0)?;
         serde_json::to_writer(&mut self.keydir_file, &self.keydir)?;
         self.file.flush()?;
         self.keydir_file.flush()?;
+        Ok(())
+    }
+
+    pub fn close(&mut self) -> Result<()> {
+        self.sync()?;
         Ok(())
     }
 
@@ -138,6 +143,11 @@ impl Bitcask {
             }
             None => Ok(None),
         }
+    }
+
+    pub fn list_keys(&mut self) -> Vec<&String> {
+        let keys_iter: Vec<&String> = Vec::from_iter(self.keydir.keys());
+        keys_iter
     }
 
     //Merge several data files within a Bitcask datastore into a more

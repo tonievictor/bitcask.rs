@@ -10,6 +10,7 @@ enum Action {
     Get,
     Remove,
     Exit,
+    ListKeys,
 }
 
 #[derive(Debug)]
@@ -49,7 +50,7 @@ fn main() {
                     },
                     Err(err) => eprintln!("An error occured: {err}"),
                 },
-                Action::Exit => match store.sync() {
+                Action::Exit => match store.close() {
                     Ok(_) => {
                         println!("Bye for now...");
                         exit(0);
@@ -59,6 +60,7 @@ fn main() {
                         eprintln!("An error occured while syncing datastore, try again");
                     }
                 },
+                Action::ListKeys => println!("Keys: {:?}", store.list_keys()),
                 Action::Remove => unimplemented!(""),
             },
             Err(_) => continue,
@@ -104,6 +106,13 @@ fn parse_input(input: String) -> Result<Command, ()> {
                 key: "".to_string(),
                 value: "".to_string(),
             });
+        }
+        "list" => {
+            if newinput.len() != 2 || newinput[1] != "keys" {
+                eprintln!("hint: list keys");
+                return Err(());
+            }
+            Action::ListKeys
         }
         _ => {
             println!("invalid command");
