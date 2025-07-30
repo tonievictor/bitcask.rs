@@ -18,7 +18,7 @@ pub struct Pair<'a> {
 }
 
 #[allow(dead_code)]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct KeydirVal {
     entry_size: usize,
     entry_pos: u64,
@@ -26,31 +26,50 @@ pub struct KeydirVal {
     timestamp: SystemTime,
 }
 
+#[allow(dead_code)]
 pub struct Bitcask {
     directory: Box<Path>,
     filepath: PathBuf,
     file: File,
     cursor: usize, //stores the content of the file when opened. helps guide insertion.
     keydir: HashMap<String, KeydirVal>,
+    keydir_file: File,
+    keydir_filepath: PathBuf,
 }
 
 impl Bitcask {
-    pub fn open(directory: &Path, filepath: impl Into<PathBuf>) -> Result<Bitcask> {
-        let path = filepath.into();
+    pub fn open(dir: &Path) -> Result<Bitcask> {
+        let filepath = dir.join(Path::new("activelog.btk"));
+
         let file = OpenOptions::new()
             .create(true)
             .append(true)
             .read(true)
-            .open(&path)?;
+            .open(&filepath)?;
 
-        let contents = read_to_string(path.clone())?;
+        let keydir_filepath = dir.join(Path::new("keydir"));
+        let keydir_file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .read(true)
+            .open(&keydir_filepath)?;
+
+        let contents = read_to_string(&filepath)?;
+
+        let keydir_content = read_to_string(&keydir_filepath)?;
+        let keydir: HashMap<String, KeydirVal> = match keydir_content.len() {
+            0 => HashMap::new(),
+            _ => serde_json::from_str(&keydir_content)?,
+        };
 
         Ok(Bitcask {
-            directory: directory.into(),
+            directory: dir.into(),
             file,
             cursor: contents.len(),
-            filepath: path,
-            keydir: HashMap::new(),
+            filepath,
+            keydir,
+            keydir_file,
+            keydir_filepath,
         })
     }
 
@@ -98,6 +117,14 @@ impl Bitcask {
         Ok(())
     }
 
+    pub fn sync(&mut self) -> Result<()> {
+        self.keydir_file.set_len(0)?;
+        serde_json::to_writer(&mut self.keydir_file, &self.keydir)?;
+        self.file.flush()?;
+        self.keydir_file.flush()?;
+        Ok(())
+    }
+
     pub fn get(&mut self, key: String) -> Result<Option<String>> {
         match self.keydir.get(&key).cloned() {
             Some(v) => {
@@ -121,7 +148,7 @@ impl Bitcask {
         let mut non_active_files: Vec<PathBuf> = Vec::new();
         for path in paths {
             let p = path?;
-            if p.path() != self.filepath {
+            if p.path() != self.filepath && p.path() != self.keydir_filepath {
                 non_active_files.push(p.path());
             }
         }
