@@ -1,14 +1,15 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use serde_json;
 use std::collections::HashMap;
-use std::fs::{copy, read_dir, read_to_string, remove_file, File, OpenOptions};
+use std::fs::{copy, read_dir, read_to_string, File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 use ulid::Ulid;
 
-#[derive(Serialize, Deserialize)]
+const MAX_BYTE_SIZE: u64 = 5_242_880;
+
+#[derive(Serialize, Deserialize, Debug)]
 pub struct Pair<'a> {
     pub key: &'a str,
     pub keysize: usize,
@@ -31,45 +32,64 @@ pub struct Bitcask {
     directory: Box<Path>,
     filepath: PathBuf,
     file: File,
-    cursor: usize, //stores the content of the file when opened. helps guide insertion.
+    offset: usize, //stores the content of the file when opened. helps guide insertion.
     keydir: HashMap<String, KeydirVal>,
-    keydir_file: File,
-    keydir_filepath: PathBuf,
+}
+
+fn build_keydir(dir: &Path) -> Result<HashMap<String, KeydirVal>> {
+    let paths = read_dir(dir)?;
+    let mut pos = 0;
+    let mut keydir = HashMap::new();
+
+    for file in paths {
+        let file = file?;
+        let content = read_to_string(file.path())?;
+        if content.is_empty() {
+            continue;
+        }
+        for line in content.split('\n') {
+            if line.is_empty() {
+                break;
+            }
+            let pair: Pair = serde_json::from_str(line)?;
+            let kdirval = KeydirVal {
+                entry_size: line.len(),
+                entry_pos: pos,
+                file_id: file.path(),
+                timestamp: pair.timestamp,
+            };
+            pos += line.len() as u64 + 1;
+            match keydir.get(pair.key) {
+                None => {
+                    keydir.insert(pair.key.to_string(), kdirval);
+                }
+                Some(val) => {
+                    if pair.timestamp > val.timestamp {
+                        keydir.insert(pair.key.to_string(), kdirval);
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(keydir)
 }
 
 impl Bitcask {
     pub fn open(dir: &Path) -> Result<Bitcask> {
         let filepath = dir.join(Path::new("activelog.btk"));
-
         let file = OpenOptions::new()
             .create(true)
             .append(true)
             .read(true)
             .open(&filepath)?;
 
-        let keydir_filepath = dir.join(Path::new("keydir"));
-        let keydir_file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .read(true)
-            .open(&keydir_filepath)?;
-
-        let contents = read_to_string(&filepath)?;
-
-        let keydir_content = read_to_string(&keydir_filepath)?;
-        let keydir: HashMap<String, KeydirVal> = match keydir_content.len() {
-            0 => HashMap::new(),
-            _ => serde_json::from_str(&keydir_content)?,
-        };
-
         Ok(Bitcask {
             directory: dir.into(),
             file,
-            cursor: contents.len(),
+            offset: read_to_string(&filepath)?.len(),
             filepath,
-            keydir,
-            keydir_file,
-            keydir_filepath,
+            keydir: build_keydir(dir)?,
         })
     }
 
@@ -78,50 +98,43 @@ impl Bitcask {
         let path = self.directory.join(Path::new(&newfilename));
 
         copy(self.filepath.clone(), path)?;
-        remove_file(self.filepath.clone())?;
-
-        self.file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .read(true)
-            .open(self.filepath.clone())?;
+        self.file.set_len(0)?;
 
         Ok(())
     }
 
     pub fn put<'a>(&mut self, key: &'a str, value: &'a str) -> Result<()> {
+        let time = SystemTime::now();
         let pair = serde_json::to_string(&Pair {
             key,
             keysize: key.len(),
             value,
             value_size: value.len(),
-            timestamp: SystemTime::now(),
+            timestamp: time,
         })?;
 
         let cursor = self.file.stream_position()?;
-        let mut pos = std::cmp::max(cursor, self.cursor as u64);
+        let mut pos = std::cmp::max(cursor, self.offset as u64);
 
         // check if file is larger than 5mb
-        if pos >= 5120 - pair.len() as u64 {
+        if pos >= MAX_BYTE_SIZE - pair.len() as u64 {
             self.dropcurrentfile()?;
             pos = 0;
         };
         let _ = self.file.write(pair.as_bytes())?;
+        let _ = self.file.write("\n".as_bytes())?;
         let kdirval = KeydirVal {
             entry_size: pair.len(),
             entry_pos: pos,
             file_id: self.filepath.clone(),
-            timestamp: SystemTime::now(),
+            timestamp: time,
         };
         self.keydir.insert(key.to_owned(), kdirval);
         Ok(())
     }
 
     fn sync(&mut self) -> Result<()> {
-        self.keydir_file.set_len(0)?;
-        serde_json::to_writer(&mut self.keydir_file, &self.keydir)?;
         self.file.flush()?;
-        self.keydir_file.flush()?;
         Ok(())
     }
 
@@ -158,7 +171,7 @@ impl Bitcask {
         let mut non_active_files: Vec<PathBuf> = Vec::new();
         for path in paths {
             let p = path?;
-            if p.path() != self.filepath && p.path() != self.keydir_filepath {
+            if p.path() != self.filepath {
                 non_active_files.push(p.path());
             }
         }
