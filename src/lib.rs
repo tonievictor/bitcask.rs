@@ -1,3 +1,4 @@
+use anyhow::anyhow;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -8,6 +9,7 @@ use std::time::SystemTime;
 use ulid::Ulid;
 
 const MAX_BYTE_SIZE: u64 = 5_242_880;
+const TOMBSTONE_VALUE: &str = "__TOMBSTONE__";
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Pair<'a> {
@@ -18,7 +20,6 @@ pub struct Pair<'a> {
     timestamp: SystemTime,
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct KeydirVal {
     entry_size: usize,
@@ -27,7 +28,6 @@ pub struct KeydirVal {
     timestamp: SystemTime,
 }
 
-#[allow(dead_code)]
 pub struct Bitcask {
     directory: Box<Path>,
     filepath: PathBuf,
@@ -52,6 +52,10 @@ fn build_keydir(dir: &Path) -> Result<HashMap<String, KeydirVal>> {
                 break;
             }
             let pair: Pair = serde_json::from_str(line)?;
+            if pair.value == TOMBSTONE_VALUE {
+                keydir.remove(pair.key);
+                continue;
+            }
             let kdirval = KeydirVal {
                 entry_size: line.len(),
                 entry_pos: pos,
@@ -101,6 +105,27 @@ impl Bitcask {
         self.file.set_len(0)?;
 
         Ok(())
+    }
+
+    pub fn remove(&mut self, key: &str) -> Result<()> {
+        match self.get(key.to_string())? {
+            Some(_) => {
+                let time = SystemTime::now();
+                let pair = serde_json::to_string(&Pair {
+                    key,
+                    keysize: key.len(),
+                    value: TOMBSTONE_VALUE,
+                    value_size: TOMBSTONE_VALUE.len(),
+                    timestamp: time,
+                })?;
+
+                let _ = self.file.write(pair.as_bytes())?;
+                let _ = self.file.write("\n".as_bytes())?;
+                self.keydir.remove(key);
+                Ok(())
+            }
+            None => Err(anyhow!("key does not exist in the database".to_string())),
+        }
     }
 
     pub fn put<'a>(&mut self, key: &'a str, value: &'a str) -> Result<()> {

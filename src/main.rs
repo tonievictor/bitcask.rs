@@ -46,7 +46,7 @@ fn main() {
                 Action::Get => match store.get(command.key) {
                     Ok(obj) => match obj {
                         Some(v) => println!("{v}"),
-                        None => println!("Key does not exist in the database"),
+                        None => eprintln!("Key does not exist in the database"),
                     },
                     Err(err) => eprintln!("An error occured: {err}"),
                 },
@@ -61,7 +61,12 @@ fn main() {
                     }
                 },
                 Action::ListKeys => println!("Keys: {:?}", store.list_keys()),
-                Action::Remove => unimplemented!(""),
+                Action::Remove => match store.remove(command.key.as_str()) {
+                    Ok(_) => println!("Deleted key from database"),
+                    Err(err) => {
+                        eprintln!("{err}");
+                    }
+                },
             },
             Err(_) => continue,
         }
